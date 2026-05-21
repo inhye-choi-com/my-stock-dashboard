@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import time
+import io  # pandas 최신 버전 호환성을 위한 모듈 추가
 
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="My 실시간 단타 대시보드", layout="wide")
@@ -34,8 +35,8 @@ def get_current_market_time():
         display_time = "09:00 (이전 영업일 마감 데이터)"
     return display_time, is_market_open
 
-# 3. 네이버 증권 크롤링 함수 (클라우드 환경 표준형)
-@st.cache_data(ttl=60)  # 클라우드에서는 1분 단위로 따끈따끈하게 갱신
+# 3. 네이버 증권 크롤링 함수
+@st.cache_data(ttl=60)
 def fetch_real_market_data():
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     
@@ -44,7 +45,9 @@ def fetch_real_market_data():
     res_value = requests.get(url_value, headers=headers, timeout=10)
     soup_value = BeautifulSoup(res_value.text, 'html.parser')
     table_value = soup_value.find('table', {'class': 'type_2'})
-    df_list_v = pd.read_html(str(table_value))[0]
+    
+    # [수정 포인트] 문자열 오류를 방지하기 위해 io.StringIO로 변환하여 입력
+    df_list_v = pd.read_html(io.StringIO(str(table_value)))[0]
     df_list_v = df_list_v.dropna(subset=['종목명'])
     df_list_v = df_list_v[df_list_v['종목명'] != '종목명']
     df_value_raw = df_list_v.head(10).copy()
@@ -58,7 +61,9 @@ def fetch_real_market_data():
     res_gain = requests.get(url_gain, headers=headers, timeout=10)
     soup_gain = BeautifulSoup(res_gain.text, 'html.parser')
     table_gain = soup_gain.find('table', {'class': 'type_2'})
-    df_list_g = pd.read_html(str(table_gain))[0]
+    
+    # [수정 포인트] 동일하게 io.StringIO로 감싸서 문자열 유실 오류 차단
+    df_list_g = pd.read_html(io.StringIO(str(table_gain)))[0]
     df_list_g = df_list_g.dropna(subset=['종목명'])
     df_list_g = df_list_g[df_list_g['종목명'] != '종목명']
     df_gain_raw = df_list_g.head(10).copy()
@@ -73,6 +78,8 @@ def fetch_real_market_data():
     soup_news = BeautifulSoup(res_news.text, 'html.parser')
     news_titles = soup_news.select('.mainNewsList .articleSubject a')
     news_list = [title.get_text().strip() for title in news_titles[:6]]
+    if not news_list:
+        news_list = ["현재 표시할 실시간 주요 뉴스가 없습니다."]
     
     return df_value_final, df_gain_final, news_list
 
