@@ -6,11 +6,12 @@ from datetime import datetime
 import io
 from streamlit_autorefresh import st_autorefresh
 import yfinance as yf
+import plotly.graph_objects as go  # 캔들 차트를 그리기 위한 라이브러리 추가
 
 # 1. 페이지 기본 설정
-st.set_page_config(page_title="실시간 주도주 차트 대시보드", layout="wide")
+st.set_page_config(page_title="실시간 주도주 캔들 차트 대시보드", layout="wide")
 
-# 상승/하락 색상 강조 스타일
+# 상승/하락 색상 강조 스타일 (테이블용)
 st.markdown("""
 <style>
     .up-color { color: #ef4444; font-weight: bold; }   
@@ -90,7 +91,7 @@ def fetch_market_data():
     
     return df_v_final, df_g_final
 
-# 선택한 기간에 맞춰 주가 차트를 가져오는 함수
+# [업그레이드] 멋진 캔들 차트를 그리는 함수
 def get_stock_chart(code, name, period_choice):
     full_code = f"{code}.KS"
     ticker = yf.Ticker(full_code)
@@ -112,8 +113,29 @@ def get_stock_chart(code, name, period_choice):
         st.info("💡 오늘 당일 분봉 데이터가 아직 생성되지 않아 최근 일주일 흐름으로 대체합니다.")
     
     if not df.empty:
-        st.subheader(f"📊 {name} ({code}) {period_choice} 흐름")
-        st.line_chart(df['Close'])
+        st.subheader(f"📊 {name} ({code}) {period_choice} 캔들 차트")
+        
+        # Plotly를 이용한 캔들차트 생성
+        fig = go.Figure(data=[go.Candlestick(
+            x=df.index,
+            open=df['Open'],
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close'],
+            increasing_line_color='#ef4444',  # 상승 캔들: 빨간색
+            decreasing_line_color='#3b82f6'   # 하락 캔들: 파란색
+        )])
+        
+        # 레이아웃 예쁘게 다듬기 (하단 슬라이더 제거 및 여백 조정)
+        fig.update_layout(
+            xaxis_rangeslider_visible=False,
+            margin=dict(l=10, r=10, t=10, b=10),
+            height=450,
+            template="plotly_white"
+        )
+        
+        # 스트림릿 화면에 차트 표시
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.error("차트 데이터를 불러올 수 없습니다. 종목 코드나 장 상태를 확인해 주세요.")
 
