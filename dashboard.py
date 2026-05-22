@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import io
 from streamlit_autorefresh import st_autorefresh
-import yfinance as yf  # 그래프 데이터를 위한 라이브러리 추가
+import yfinance as yf
 
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="실시간 주도주 차트 대시보드", layout="wide")
@@ -46,7 +46,6 @@ def fetch_market_data():
     soup_v = BeautifulSoup(res_v.text, 'html.parser')
     table_v = soup_v.find('table', {'class': 'type_2'})
     
-    # 종목명과 종목코드를 같이 추출
     stocks = []
     rows = table_v.find_all('tr')
     for row in rows:
@@ -60,7 +59,6 @@ def fetch_market_data():
     df_v = df_v.dropna(subset=['종목명'])
     df_v = df_v[df_v['종목명'] != '종목명'].head(10).copy()
     
-    # 코드 정보 합치기
     df_v['코드'] = [s['코드'] for s in stocks[:10]]
     df_v['거래대금(억)'] = (pd.to_numeric(df_v['거래대금'], errors='coerce') / 1000).round(1)
     df_v_final = df_v[['종목명', '등락률', '거래대금(억)', '코드']].copy()
@@ -92,23 +90,34 @@ def fetch_market_data():
     
     return df_v_final, df_g_final
 
-# 주가 차트 가져오기 함수
-def get_stock_chart(code, name):
-    # 한국 종목 코드는 끝에 .KS(코스피) 또는 .KQ(코스닥)가 붙어야 함 (여기선 코스피 기준)
+# [수정 및 강화] 선택한 기간에 맞춰 주가 차트를 져오는 함수
+def get_stock_chart(code, name, period_choice):
     full_code = f"{code}.KS"
     ticker = yf.Ticker(full_code)
-    # 오늘 하루치 분봉 데이터를 가져오기 (1분 단위)
-    df = ticker.history(period="1d", interval="1m")
     
-    if df.empty:
-        # 분봉 데이터가 없으면 최근 5일치 일봉 데이터 시도
-        df = ticker.history(period="5d")
+    # 사용자가 선택한 기간에 따라 yfinance의 period와 interval 매핑
+    if period_choice == "하루 (1분봉)":
+        period_val = "1d"
+        interval_val = "1m"
+    elif period_choice == "일주일 (30분봉)":
+        period_val = "5d"       # 주식 영업일 기준 5일
+        interval_val = "30m"    # 30분 단위 흐름
+    else:  # 한달 (일봉)
+        period_val = "1mo"
+        interval_val = "1d"     # 1일 단위 일봉 흐름
+        
+    df = ticker.history(period=period_val, interval=interval_val)
+    
+    # 데이터가 비어있을 때를 위한 예외 방어 로직
+    if df.empty and period_choice == "하루 (1분봉)":
+        df = ticker.history(period="5d", interval="30m")
+        st.info("💡 오늘 당일 분봉 데이터가 아직 생성되지 않아 최근 일주일 흐름으로 대체합니다.")
     
     if not df.empty:
-        st.subheader(f"📊 {name} ({code}) 실시간 흐름")
+        st.subheader(f"📊 {name} ({code}) {period_choice} 흐름")
         st.line_chart(df['Close'])
     else:
-        st.error("차트 데이터를 불러올 수 없습니다. (종목코드 확인 필요)")
+        st.error("차트 데이터를 불러올 수 없습니다. 종목 코드나 장 상태를 확인해 주세요.")
 
 # 4. UI 렌더링
 display_time, is_market_open = get_current_market_time()
@@ -122,52 +131,3 @@ st.caption(f"📅 기준일: {datetime.now().strftime('%Y-%m-%d')} | 🔄 60초 
 if is_market_open:
     st.success(f"📌 **현재 데이터 동기화 시점:** {display_time}")
 else:
-    st.warning(f"⚠️ 현재 장 마감 상태입니다. ({display_time})")
-
-try:
-    df_v, df_g = fetch_market_data()
-    
-    # 종목 선택 리스트 만들기 (거래대금 상위 + 등락률 상위)
-    combined_list = pd.concat([df_v[['종목명', '코드']], df_g[['종목명', '코드']]]).drop_duplicates('종목명')
-    stock_names = combined_list['종목명'].tolist()
-    
-    # 좌측/중앙 표 시각화용 포맷팅
-    df_v_display = df_v.copy()
-    df_g_display = df_g.copy()
-    
-    def format_rate(val):
-        val_str = str(val).replace('%','').replace('+','')
-        try:
-            num = float(val_str)
-            if num > 0: return f"<span class='up-color'>▲ +{num}%</span>"
-            elif num < 0: return f"<span class='down-color'>▼ {num}%</span>"
-            return f"<span>0.0%</span>"
-        except: return val
-
-    df_v_display['등락률'] = df_v_display['등락률'].apply(format_rate)
-    df_g_display['등락률'] = df_g_display['등락률'].apply(format_rate)
-
-    # 화면 분할
-    col1, col2, col3 = st.columns([1, 1, 1.5])
-    
-    with col1:
-        st.subheader("💵 거래대금 상위")
-        st.markdown(df_v_display.drop(columns=['코드']).set_index("순위").to_html(escape=False), unsafe_allow_html=True)
-        
-    with col2:
-        st.subheader("🔥 등락률 상위")
-        st.markdown(df_g_display.drop(columns=['코드']).set_index("순위").to_html(escape=False), unsafe_allow_html=True)
-        
-    with col3:
-        st.subheader("🔍 종목 상세 차트")
-        # 기본 선택을 거래대금 1위 종목으로 설정
-        selected_stock_name = st.selectbox("그래프를 볼 종목을 선택하세요", stock_names, index=0)
-        
-        # 선택된 종목의 코드 찾기
-        selected_code = combined_list[combined_list['종목명'] == selected_stock_name]['코드'].values[0]
-        
-        # 차트 그리기
-        get_stock_chart(selected_code, selected_stock_name)
-
-except Exception as e:
-    st.error(f"오류 발생: {e}")
