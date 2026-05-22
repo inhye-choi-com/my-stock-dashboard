@@ -82,7 +82,7 @@ def fetch_real_market_data():
         
     df_gain_final.insert(0, '순위', range(1, len(df_gain_final) + 1))
     
-    # --- C. 주요 뉴스 (잘렸던 주소 수정 완료) ---
+    # --- C. 주요 뉴스 ---
     url_news = "https://finance.naver.com/news/mainnews.naver"
     res_news = requests.get(url_news, headers=headers, timeout=10)
     soup_news = BeautifulSoup(res_news.text, 'html.parser')
@@ -117,6 +117,7 @@ if is_market_open:
 else:
     st.warning(f"⚠️ 주식시장이 마감되었습니다. {display_time}")
 
+# UI 그리기 및 예외 처리 구문
 try:
     df_value, df_gain, news = fetch_real_market_data()
     df_value['등락률'] = df_value['등락률'].apply(format_change_rate)
@@ -128,4 +129,12 @@ try:
         st.markdown(df_value.set_index("순위").to_html(escape=False), unsafe_allow_html=True)
     with col2:
         st.subheader("🔥 당일 등락률 상위 (급등주)")
-        st.markdown
+        st.markdown(df_gain.set_index("순위").to_html(escape=False), unsafe_allow_html=True)
+    with col3:
+        st.subheader("📰 실시간 주요 증시 뉴스")
+        st.markdown("<br>", unsafe_allow_html=True)
+        for idx, item in enumerate(news):
+            st.markdown(f"**{idx+1}.** {item}")
+            st.markdown("<hr style='margin:10px 0; border-top:1px dashed #ddd;'>", unsafe_allow_html=True)
+except Exception as e:
+    st.error(f"데이터 연동 중 오류 발생: {e}")
