@@ -3,8 +3,9 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
-import time
-import io  # pandas 최신 버전 호환성을 위한 모듈 추가
+import io
+# 자동 새로고침을 위한 라이브러리 추가
+from streamlit_autorefresh import st_autorefresh
 
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="My 실시간 단타 대시보드", layout="wide")
@@ -27,8 +28,7 @@ def get_current_market_time():
     is_market_open = is_weekday and (9 <= current_hour < 15 or (current_hour == 15 and current_minute <= 30))
     
     if is_market_open:
-        display_minute = "30" if current_minute >= 30 else "00"
-        display_time = f"{current_hour}:{display_minute}"
+        display_time = now.strftime("%H:%M:%S")
     elif is_weekday and (current_hour > 15 or (current_hour == 15 and current_minute > 30)):
         display_time = "15:30 (장마감 최종 데이터 고정)"
     else:
@@ -36,7 +36,7 @@ def get_current_market_time():
     return display_time, is_market_open
 
 # 3. 네이버 증권 크롤링 함수
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10) # 단타용 대시보드이므로 캐시 주기(TTL)를 10초로 단축
 def fetch_real_market_data():
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     
@@ -46,13 +46,14 @@ def fetch_real_market_data():
     soup_value = BeautifulSoup(res_value.text, 'html.parser')
     table_value = soup_value.find('table', {'class': 'type_2'})
     
-    # [수정 포인트] 문자열 오류를 방지하기 위해 io.StringIO로 변환하여 입력
     df_list_v = pd.read_html(io.StringIO(str(table_value)))[0]
     df_list_v = df_list_v.dropna(subset=['종목명'])
     df_list_v = df_list_v[df_list_v['종목명'] != '종목명']
     df_value_raw = df_list_v.head(10).copy()
+    
     df_value_raw['거래대금'] = pd.to_numeric(df_value_raw['거래대금'], errors='coerce')
-    df_value_raw['거래대금(억)'] = (df_value_raw['거래대금'] / 100).round(1)
+    df_value_raw['거래대금(억)'] = (df_value_raw['거래대금'] / 1000).round(1) # 단위를 억 원으로 올바르게 수정 (백만/1000)
+    
     df_value_final = df_value_raw[['종목명', '등락률', '거래대금(억)']].copy()
     df_value_final.insert(0, '순위', range(1, len(df_value_final) + 1))
     
@@ -62,13 +63,14 @@ def fetch_real_market_data():
     soup_gain = BeautifulSoup(res_gain.text, 'html.parser')
     table_gain = soup_gain.find('table', {'class': 'type_2'})
     
-    # [수정 포인트] 동일하게 io.StringIO로 감싸서 문자열 유실 오류 차단
     df_list_g = pd.read_html(io.StringIO(str(table_gain)))[0]
     df_list_g = df_list_g.dropna(subset=['종목명'])
     df_list_g = df_list_g[df_list_g['종목명'] != '종목명']
     df_gain_raw = df_list_g.head(10).copy()
+    
     df_gain_raw['거래대금'] = pd.to_numeric(df_gain_raw['거래대금'], errors='coerce')
-    df_gain_raw['거래대금(억)'] = (df_gain_raw['거래대금'] / 100).round(1)
+    df_gain_raw['거래대금(억)'] = (df_gain_raw['거래대금'] / 1000).round(1) # 단위를 억 원으로 올바르게 수정
+    
     df_gain_final = df_gain_raw[['종목명', '등락률', '거래대금(억)']].copy()
     df_gain_final.insert(0, '순위', range(1, len(df_gain_final) + 1))
     
@@ -94,9 +96,18 @@ def format_change_rate(val):
 
 # 4. UI 렌더링
 display_time, is_market_open = get_current_market_time()
+
+# 장중일 때만 60초(60000ms)마다 안전하게 화면을 새로고침하는 타이머 작동
+if is_market_open:
+    st_autorefresh(interval=60000, key="datarefresh")
+
 st.title("📈 Live! 주식 단타 주도주 대시보드")
 st.caption(f"📅 데이터 기준일: {datetime.now().strftime('%Y-%m-%d')} | 🔄 실시간 연동 완료")
-st.success(f"📌 **현재 데이터 동기화 시점:** {display_time}")
+
+if is_market_open:
+    st.success(f"📌 **현재 데이터 동기화 시점:** {display_time} (60초 간격 자동 갱신 중)")
+else:
+    st.warning(f"⚠️ 주식시장이 마감되었습니다. {display_time}")
 
 try:
     df_value, df_gain, news = fetch_real_market_data()
@@ -118,9 +129,3 @@ try:
             st.markdown("<hr style='margin:10px 0; border-top:1px dashed #ddd;'>", unsafe_allow_html=True)
 except Exception as e:
     st.error(f"데이터 연동 중 오류 발생: {e}")
-
-if is_market_open:
-    time.sleep(60)
-    st.rerun()
-else:
-    st.warning("⚠️ 주식시장이 마감되었습니다. 현재 데이터는 장 마감 시점(15:30)의 최종 데이터입니다.")
