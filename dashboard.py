@@ -50,7 +50,7 @@ def fetch_real_market_data():
     df_list_v = df_list_v[df_list_v['종목명'] != '종목명']
     df_value_raw = df_list_v.head(10).copy()
     
-    # 거래대금 컬럼이 존재할 때만 처리 (방어 코드)
+    # 거래대금 컬럼 안전하게 처리
     if '거래대금' in df_value_raw.columns:
         df_value_raw['거래대금'] = pd.to_numeric(df_value_raw['거래대금'], errors='coerce')
         df_value_raw['거래대금(억)'] = (df_value_raw['거래대금'] / 1000).round(1)
@@ -72,10 +72,9 @@ def fetch_real_market_data():
     df_list_g = df_list_g[df_list_g['종목명'] != '종목명']
     df_gain_raw = df_list_g.head(10).copy()
     
-    # 등락률 상위 페이지는 '거래대금'이 없고 '거래량'이 있으므로 이에 맞게 안전하게 추출
+    # 등락률 상위 페이지는 '거래량' 컬럼에 맞춰 안전하게 추출
     if '거래량' in df_gain_raw.columns:
         df_gain_raw['거래량'] = pd.to_numeric(df_gain_raw['거래량'], errors='coerce')
-        # 거래량을 만(10,000) 단위로 포맷팅
         df_gain_raw['거래량(만주)'] = (df_gain_raw['거래량'] / 10000).round(1)
         df_gain_final = df_gain_raw[['종목명', '등락률', '거래량(만주)']].copy()
     else:
@@ -84,56 +83,4 @@ def fetch_real_market_data():
     df_gain_final.insert(0, '순위', range(1, len(df_gain_final) + 1))
     
     # --- C. 주요 뉴스 ---
-    url_news = "https://finance.naver.com/news/mainnews.naver"
-    res_news = requests.get(url_news, headers=headers, timeout=10)
-    soup_news = BeautifulSoup(res_news.text, 'html.parser')
-    news_titles = soup_news.select('.mainNewsList .articleSubject a')
-    news_list = [title.get_text().strip() for title in news_titles[:6]]
-    if not news_list:
-        news_list = ["현재 표시할 실시간 주요 뉴스가 없습니다."]
-    
-    return df_value_final, df_gain_final, news_list
-
-def format_change_rate(val):
-    val_str = str(val).strip().replace('%', '').replace('+', '')
-    try:
-        val_num = float(val_str)
-        if val_num > 0: return f"<span class='up-color'>▲ +{val_num}%</span>"
-        elif val_num < 0: return f"<span class='down-color'>▼ {val_num}%</span>"
-        else: return f"<span class='flat-color'>0.00%</span>"
-    except: return f"<span class='flat-color'>{val}</span>"
-
-# 4. UI 렌더링
-display_time, is_market_open = get_current_market_time()
-
-if is_market_open:
-    st_autorefresh(interval=60000, key="datarefresh")
-
-st.title("📈 Live! 주식 단타 주도주 대시보드")
-st.caption(f"📅 데이터 기준일: {datetime.now().strftime('%Y-%m-%d')} | 🔄 실시간 연동 완료")
-
-if is_market_open:
-    st.success(f"📌 **현재 데이터 동기화 시점:** {display_time} (60초 간격 자동 갱신 중)")
-else:
-    st.warning(f"⚠️ 주식시장이 마감되었습니다. {display_time}")
-
-try:
-    df_value, df_gain, news = fetch_real_market_data()
-    df_value['등락률'] = df_value['등락률'].apply(format_change_rate)
-    df_gain['등락률'] = df_gain['등락률'].apply(format_change_rate)
-    
-    col1, col2, col3 = st.columns([1.3, 1.3, 1.4])
-    with col1:
-        st.subheader("💵 당일 거래대금 상위 (코스피)")
-        st.write(df_value.set_index("순위").to_html(escape=False, unsafe_allow_html=True), unsafe_allow_html=True)
-    with col2:
-        st.subheader("🔥 당일 등락률 상위 (급등주)")
-        st.write(df_gain.set_index("순위").to_html(escape=False, unsafe_allow_html=True), unsafe_allow_html=True)
-    with col3:
-        st.subheader("📰 실시간 주요 증시 뉴스")
-        st.markdown("<br>", unsafe_allow_html=True)
-        for idx, item in enumerate(news):
-            st.markdown(f"**{idx+1}.** {item}")
-            st.markdown("<hr style='margin:10px 0; border-top:1px dashed #ddd;'>", unsafe_allow_html=True)
-except Exception as e:
-    st.error(f"데이터 연동 중 오류 발생: {e}")
+    url_news = "https://finance.naver.
