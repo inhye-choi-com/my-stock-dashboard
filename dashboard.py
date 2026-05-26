@@ -58,7 +58,7 @@ def load_portfolio_from_sheets(url):
     except Exception as e:
         return pd.DataFrame(columns=["종목명", "매수가", "시장"])
 
-# 3. 네이버 증권 데이터 추출 함수 (안정성 대폭 강화)
+# 3. 네이버 증권 데이터 추출 함수
 @st.cache_data(ttl=10)
 def fetch_market_data(sosok_code):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -76,62 +76,4 @@ def fetch_market_data(sosok_code):
         if anchor:
             stocks.append({'종목명': anchor.get_text().strip(), '코드': anchor['href'].split('=')[-1]})
             
-    df_v = pd.read_html(io.StringIO(str(table_v)))[0]
-    df_v = df_v.dropna(subset=['종목명'])
-    df_v = df_v[df_v['종목명'] != '종목명'].head(10).copy()
-    
-    # 크롤링한 실시간 매핑 데이터 수에 맞춰 슬라이싱 안전장치 추가
-    actual_len_v = min(len(df_v), len(stocks))
-    df_v = df_v.head(actual_len_v).copy()
-    df_v['코드'] = [s['코드'] for s in stocks[:actual_len_v]]
-    
-    df_v['raw_val'] = pd.to_numeric(df_v['거래대금'], errors='coerce').fillna(0)
-    df_v['거래대금(억)'] = (df_v['raw_val'] / 1000).round(1)
-    
-    # 등락률 상위
-    url_g = f"https://finance.naver.com/sise/sise_rise.naver?sosok={sosok_code}"
-    res_g = requests.get(url_g, headers=headers, timeout=10)
-    soup_g = BeautifulSoup(res_g.text, 'html.parser')
-    table_g = soup_g.find('table', {'class': 'type_2'})
-    
-    stocks_g = []
-    rows_g = table_g.find_all('tr')
-    for row in rows_g:
-        anchor = row.find('a', {'class': 'tltle'})
-        if anchor:
-            stocks_g.append({'종목명': anchor.get_text().strip(), '코드': anchor['href'].split('=')[-1]})
-            
-    df_g = pd.read_html(io.StringIO(str(table_g)))[0]
-    df_g = df_g.dropna(subset=['종목명'])
-    df_g = df_g[df_g['종목명'] != '종목명'].head(10).copy()
-    
-    actual_len_g = min(len(df_g), len(stocks_g))
-    df_g = df_g.head(actual_len_g).copy()
-    df_g['코드'] = [s['코드'] for s in stocks_g[:actual_len_g]]
-    
-    df_g['raw_vol'] = pd.to_numeric(df_g['거래량'], errors='coerce').fillna(0)
-    df_g['거래량(만)'] = (df_g['raw_vol'] / 10000).round(1)
-    
-    return df_v, df_g
-
-# 개별 종목 현재가 가져오기 함수
-def get_current_price(code, market_type):
-    suffix = ".KS" if "코스피" in str(market_type) else ".KQ"
-    try:
-        ticker = yf.Ticker(f"{code}{suffix}")
-        todays_data = ticker.history(period="1d")
-        if not todays_data.empty:
-            return int(todays_data['Close'].iloc[-1])
-    except:
-        pass
-    return None
-
-# 전 종목 코드 마스터 딕셔너리 구축
-@st.cache_data(ttl=3600)
-def get_all_stock_codes():
-    mapping = {}
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    for sosok in [0, 1]:
-        url = f"https://finance.naver.com/sise/sise_quant.naver?sosok={sosok}"
-        res = requests.get(url, headers=headers)
-        soup = BeautifulSoup(res.text, 'html
+    df_v = pd.read_
