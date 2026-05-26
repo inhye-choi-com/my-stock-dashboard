@@ -205,4 +205,190 @@ if is_market_open:
     st_autorefresh(interval=60000, key="datarefresh")
 
 st.title("🔥 실시간 단타 매매 & 스마트 포트폴리오")
-st.caption(f"📅 기준일: {datetime.now().strftime('%Y-%m
+
+# [에러 수정 완료] 줄바꿈 오타로 문자열이 잘렸던 오류를 완벽하게 정돈했습니다.
+today_str = datetime.now().strftime('%Y-%m-%d')
+st.caption(f"📅 기준일: {today_str} | 🔄 60초 간격 실시간 갱신 중")
+
+# ----------------- 상단 실시간 보유 주식 관리 섹션 -----------------
+st.markdown("---")
+st.subheader("📋 내 실시간 보유 주식 종합 현황")
+
+sheet_df = load_portfolio_from_sheets(GOOGLE_SHEET_URL)
+code_master = get_all_stock_codes()
+
+my_stock_list = []
+
+if not sheet_df.empty and "종목명" in sheet_df.columns:
+    p_html = "<table style='width:100%; border-collapse:collapse; text-align:left;'>"
+    p_html += "<tr style='border-bottom:2px solid #333; background-color:#f3f4f6; height:35px;'><th>종목명</th><th>매수가</th><th>보유주수</th><th>현재가</th><th>평가수익</th><th>수익률</th><th>매매 신호</th></tr>"
+    
+    for _, row in sheet_df.iterrows():
+        name = str(row['종목명']).strip()
+        buy_price = pd.to_numeric(row['매수가'], errors='coerce')
+        qty = pd.to_numeric(row['보유주수'], errors='coerce') if '보유주수' in sheet_df.columns else 1
+        if pd.isna(qty): qty = 1
+        m_type = str(row['시장']).strip() if '시장' in sheet_df.columns else "코스피"
+        
+        if name in code_master and not pd.isna(buy_price):
+            code = code_master[name]
+            current_price = get_current_price(code, m_type)
+            my_stock_list.append(name)
+            
+            if current_price:
+                profit_rate = round(((current_price - buy_price) / buy_price) * 100, 2)
+                total_profit = int((current_price - buy_price) * qty)
+                row_style = ""
+                signal = "➖ 보유 유지"
+                
+                if profit_rate <= -2.0:
+                    row_style = "class='portfolio-danger'" 
+                    signal = "🚨 [매도] -2% 손절선 이탈!"
+                elif profit_rate >= 4.0:
+                    row_style = "class='portfolio-success'" 
+                    signal = "🎉 [익절] +4% 목표가 도달!"
+                
+                if profit_rate > 0: 
+                    rate_html = f"<span class='up-color'>+{profit_rate}%</span>"
+                    profit_html = f"<span class='up-color'>{total_profit:,}원</span>"
+                elif profit_rate < 0: 
+                    rate_html = f"<span class='down-color'>{profit_rate}%</span>"
+                    profit_html = f"<span class='down-color'>{total_profit:,}원</span>"
+                else: 
+                    rate_html = "<span>0.0%</span>"
+                    profit_html = "<span>0원</span>"
+                
+                p_html += f"<tr {row_style} style='border-bottom:1px solid #ddd; height:40px;'><td><b>{name}</b></td><td>{int(buy_price):,}원</td><td>{int(qty):,}주</td><td>{current_price:,}원</td><td>{profit_html}</td><td>{rate_html}</td><td><b>{signal}</b></td></tr>"
+    p_html += "</table>"
+    st.markdown(p_html, unsafe_allow_html=True)
+else:
+    st.info("💡 구글 스프레드시트 구조를 확인해 주세요. (필수 헤더: 종목명, 매수가, 보유주수, 시장)")
+
+st.markdown("---")
+market_tab = st.radio("📈 시장 선택", ["코스피 (KOSPI)", "코스닥 (KOSDAQ)"], horizontal=True)
+sosok_code = 0 if market_tab == "코스피 (KOSPI)" else 1
+
+try:
+    df_v, df_g = fetch_market_data(sosok_code)
+    recommendations = {}
+    
+    def build_custom_html_table(df, table_type):
+        html = "<table style='width:100%; border-collapse:collapse;'>"
+        if table_type == "value":
+            html += "<tr style='border-bottom:2px solid #ddd; text-align:left;'><th>순위</th><th>종목명</th><th>등락률</th><th>거래대금(억)</th></tr>"
+        else:
+            html += "<tr style='border-bottom:2px solid #ddd; text-align:left;'><th>순위</th><th>종목명</th><th>등락률</th><th>거래량(만)</th></tr>"
+        
+        for idx, row in df.iterrows():
+            rank = idx + 1
+            name = row['종목명']
+            rate_num = parse_rate(row['등락률'])
+            
+            if rate_num > 0: rate_html = f"<span class='up-color'>▲ +{rate_num}%</span>"
+            elif rate_num < 0: rate_html = f"<span class='down-color'>▼ {rate_num}%</span>"
+            else: rate_html = f"<span class='flat-color'>0.0%</span>"
+            
+            is_recommended = False
+            row_class = ""
+            
+            if table_type == "value":
+                if float(row['거래대금(억)']) >= 500 and 3 <= rate_num <= 15:
+                    is_recommended = True
+                    recommendations[name] = f"💰 **[거래대금 주도주]** 거래대금 **{row['거래대금(억)']}억** 돌파! 자금이 쏠리는 중입니다. 눌림목 타점을 잡기 유리합니다."
+            else:
+                if int(row['raw_vol']) >= 1000000 and rate_num >= 7:
+                    is_recommended = True
+                    recommendations[name] = f"🚀 **[거래량 폭발]** 거래량 **{row['거래량(만)']}만 주** 기록! 직전 저항대 돌파 중입니다. 분봉상 흐름을 타십시오."
+            
+            if is_recommended:
+                row_class = "class='recommend-row'"
+            
+            if table_type == "value":
+                html += f"<tr {row_class} style='border-bottom:1px solid #eee; height:35px;'><td>{rank}</td><td>{name}</td><td>{rate_html}</td><td>{row['거래대금(억)']}</td></tr>"
+            else:
+                html += f"<tr {row_class} style='border-bottom:1px solid #eee; height:35px;'><td>{rank}</td><td>{name}</td><td>{rate_html}</td><td>{row['거래량(만)']}</td></tr>"
+                
+        html += "</table>"
+        return html
+
+    combined_list = pd.concat([df_v[['종목명', '코드']], df_g[['종목명', '코드']]]).drop_duplicates('종목명')
+    stock_names = combined_list['종목명'].tolist()
+
+    col1, col2, col3 = st.columns([1, 1, 1.6])
+    
+    with col1:
+        st.subheader("💵 거래대금 상위 Top 10")
+        st.markdown(build_custom_html_table(df_v.reset_index(drop=True), "value"), unsafe_allow_html=True)
+        
+    with col2:
+        st.subheader("🔥 당일 급등주 Top 10")
+        st.markdown(build_custom_html_table(df_g.reset_index(drop=True), "volume"), unsafe_allow_html=True)
+        
+    with col3:
+        st.subheader("🔍 내 주식 상세 분석 & 멀티 차트")
+        
+        if my_stock_list:
+            select_options = ["-- 내 보유 주식 선택 --"] + my_stock_list + ["-- 시장 주도주 선택 --"] + stock_names
+        else:
+            select_options = stock_names
+            
+        st.selectbox("분석할 종목을 선택하세요", select_options, index=0, key="stock_selector_main")
+        selected_stock_name = st.session_state.stock_selector_main
+        
+        if "--" in str(selected_stock_name):
+            selected_stock_name = stock_names[0]
+            
+        if not sheet_df.empty and selected_stock_name in sheet_df['종목명'].values:
+            stock_row = sheet_df[sheet_df['종목명'] == selected_stock_name].iloc[0]
+            b_price = pd.to_numeric(stock_row['매수가'], errors='coerce')
+            s_qty = pd.to_numeric(stock_row['보유주수'], errors='coerce') if '보유주수' in sheet_df.columns else 1
+            if pd.isna(s_qty): s_qty = 1
+            m_sk = str(stock_row['시장']).strip() if '시장' in sheet_df.columns else "코스피"
+            
+            s_code = code_master.get(selected_stock_name, "005930")
+            c_price = get_current_price(s_code, m_sk)
+            
+            if c_price:
+                p_rate = round(((c_price - b_price) / b_price) * 100, 2)
+                p_val = int((c_price - b_price) * s_qty)
+                
+                if p_rate >= 4.0:
+                    delta_color_style = "normal"  
+                elif p_rate <= -2.0:
+                    delta_color_style = "inverse" 
+                else:
+                    delta_color_style = "off"     
+                
+                st.info(f"📋 **{selected_stock_name}** 종목은 구글 시트에 등록된 내 보유 주식입니다.")
+                m_col1, m_col2, m_col3 = st.columns(3)
+                with m_col1:
+                    st.metric(label="보유 주수", value=f"{int(s_qty):,} 주")
+                with m_col2:
+                    st.metric(label="내 매수가 ➡️ 현재가", value=f"{c_price:,}원", delta=f"{c_price - b_price:,}원")
+                with m_col3:
+                    st.metric(label="실시간 수익률 (평가손익)", value=f"{p_rate}%", delta=f"{p_val:,}원", delta_color=delta_color_style)
+        
+        period_choice = st.radio(
+            "차트 주기", 
+            ["하루 (1분봉)", "일주일 (30분봉)", "한달 (일봉)"], 
+            horizontal=True,
+            key="chart_period_choice"
+        )
+        
+        if selected_stock_name in code_master:
+            selected_code = code_master[selected_stock_name]
+        else:
+            selected_code = "005930"
+            
+        st.markdown(f"### 📊 {selected_stock_name} ({selected_code})")
+        get_stock_chart(selected_code, selected_stock_name, period_choice, market_tab)
+        
+        st.markdown("---")
+        st.subheader("🤖 AI 단타 실시간 매매 코멘트")
+        if selected_stock_name in recommendations:
+            st.info(recommendations[selected_stock_name])
+        else:
+            st.markdown(f"ℹ️ **{selected_stock_name}** 종목은 시스템 추천 기준 이외의 개별 흐름입니다.")
+
+except Exception as e:
+    st.error(f"데이터 연동 중 오류 발생: {e}")
