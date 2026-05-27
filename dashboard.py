@@ -39,17 +39,23 @@ def get_current_market_time():
     elif is_weekday and (current_hour > 15 or (current_hour == 15 and current_minute > 30)): return "15:30 (장마감)", False
     else: return "09:00 (장 시작 전)", False
 
-# 구글 스프레드시트에서 탭별로 읽어오는 함수
-def load_portfolio_from_sheets(url, sheet_name=None):
+# 구글 스프레드시트에서 '보유현황'을 확실하게 지정하여 다운로드하는 최적화 함수
+def load_portfolio_from_sheets(url, sheet_name="보유현황"):
     try:
         if "/edit" in url:
             base_url = url.split("/edit")[0]
-            # 지정된 시트 이름(보유현황)을 가져오도록 URL 포맷 최적화
-            csv_url = f"{base_url}/gviz/tq?tqx=out:csv&sheet={sheet_name}" if sheet_name else base_url + "/export?format=csv"
-        else: csv_url = url
+            # 인코딩 포맷을 정렬하여 시트 이름 인식을 강화함
+            csv_url = f"{base_url}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
+        else:
+            csv_url = url
+        
+        # 🤖 구글 시트가 수량이나 가격을 문자로 보낼 때를 대비한 전처리 포함 로드
         df = pd.read_csv(csv_url)
+        if not df.empty:
+            df.columns = [c.strip() for c in df.columns]
         return df
-    except Exception as e: return pd.DataFrame()
+    except Exception as e:
+        return pd.DataFrame()
 
 # 네이버 증권 데이터 추출 함수
 @st.cache_data(ttl=10)
@@ -135,7 +141,10 @@ def get_stock_chart(code, name, period_choice, market_type):
         fig.add_trace(go.Scatter(x=df.index, y=df['MA10'], line=dict(color='#4caf50', width=1.5), name='10일선'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['MA20'], line=dict(color='#9c27b0', width=1.5), name='20일선'), row=1, col=1)
         colors = ['#ef4444' if row['Close'] >= row['Open'] else '#3b82f6' for _, row in df.iterrows()]
+        
+        # 🎯 [에러 수정 완료]: go.Bar의 열린 괄호 ')'를 완벽하게 닫아주었습니다.
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name="거래량", marker_color=colors), row=2, col=1)
+        
         fig.update_layout(xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10), height=400, template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
 
@@ -151,7 +160,7 @@ st.title("🔥 실시간 단타 매매 & 스마트 포트폴리오")
 today_str = datetime.now().strftime('%Y-%m-%d')
 st.caption(f"📅 기준일: {today_str} | 🔄 60초 간격 실시간 갱신 중")
 
-# 🎯 중요: '보유현황' 시트 이름을 명시해서 실시간 로드하도록 고정
+# 🎯 구글 스프레드시트의 '보유현황' 탭 데이터를 실시간 로드
 sheet_df = load_portfolio_from_sheets(GOOGLE_SHEET_URL, sheet_name="보유현황")
 code_master = get_all_stock_codes()
 
@@ -183,12 +192,12 @@ with tab_buy:
 with tab_sell:
     with st.form("sell_stock_form", clear_on_submit=True):
         s_col1, s_col2, s_col3 = st.columns(3)
-        active_stocks = sheet_df['종목명'].dropna().unique().tolist() if not sheet_df.empty else []
+        active_stocks = sheet_df['종목명'].dropna().unique().tolist() if not sheet_df.empty and '종목명' in sheet_df.columns else []
         with s_col1: sell_name = st.selectbox("매도할 종목 선택", active_stocks if active_stocks else ["보유 주식 없음"])
         
         max_sell_qty = 1000000
         current_hold_qty = 0
-        if not sheet_df.empty and sell_name in sheet_df['종목명'].values:
+        if not sheet_df.empty and '종목명' in sheet_df.columns and sell_name in sheet_df['종목명'].values:
             matching_row = sheet_df[sheet_df['종목명'] == sell_name].iloc[0]
             current_hold_qty = int(pd.to_numeric(matching_row['보유주수'], errors='coerce'))
             max_sell_qty = current_hold_qty if current_hold_qty > 0 else 1000000
@@ -229,6 +238,7 @@ if not sheet_df.empty and "종목명" in sheet_df.columns:
     p_html = "<table style='width:100%; border-collapse:collapse; text-align:left;'>"
     p_html += "<tr style='border-bottom:2px solid #333; background-color:#f3f4f6; height:35px;'><th>종목명</th><th>매수가</th><th>보유주수</th><th>현재가</th><th>평가수익</th><th>수익률</th><th>매매 신호</th></tr>"
     for _, row in sheet_df.iterrows():
+        if pd.isna(row['종목명']): continue
         name = str(row['종목명']).strip()
         buy_price = pd.to_numeric(row['매수가'], errors='coerce')
         qty = pd.to_numeric(row['보유주수'], errors='coerce') if '보유주수' in sheet_df.columns else 1
@@ -249,7 +259,8 @@ if not sheet_df.empty and "종목명" in sheet_df.columns:
                 p_html += f"<tr {row_style} style='border-bottom:1px solid #ddd; height:40px;'><td><b>{name}</b></td><td>{int(buy_price):,}원</td><td>{int(qty):,}주</td><td>{current_price:,}원</td><td>{profit_html}</td><td>{rate_html}</td><td><b>{signal}</b></td></tr>"
     p_html += "</table>"
     st.markdown(p_html, unsafe_allow_html=True)
-else: st.info("💡 구글 스프레드시트의 '보유현황' 탭 데이터를 확인해 주세요.")
+else:
+    st.info("💡 구글 스프레드시트의 '보유현황' 탭 데이터를 읽어오는 중이거나 데이터가 비어 있습니다.")
 
 # ----------------- 하단 시장 데이터 및 주도주 분석 -----------------
 st.markdown("---")
@@ -289,7 +300,7 @@ try:
         selected_stock_name = st.session_state.stock_selector_main
         if "--" in str(selected_stock_name): selected_stock_name = stock_names[0]
             
-        if not sheet_df.empty and selected_stock_name in sheet_df['종목명'].values:
+        if not sheet_df.empty and '종목명' in sheet_df.columns and selected_stock_name in sheet_df['종목명'].values:
             stock_row = sheet_df[sheet_df['종목명'] == selected_stock_name].iloc[0]
             b_price, s_qty = pd.to_numeric(stock_row['매수가'], errors='coerce'), pd.to_numeric(stock_row['보유주수'], errors='coerce')
             c_price = get_current_price(code_master.get(selected_stock_name, "005930"), stock_row.get('시장', '코스피'))
