@@ -14,7 +14,7 @@ st.set_page_config(page_title="실시간 주도주 & 포트폴리오 패널", la
 
 # [연동 완료] 제공해주신 구글 스프레드시트 공유 주소 및 쓰기용 웹앱 URL
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1pMpXBZh3sIDE79e7vNmUgdVEU8f-qbywYy7biuWoUNM/edit?usp=sharing"
-GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwKibxHE_3q73hiOOmBk1JL5895_rLb6eJNA0srE_-FA1QBFCGNvHchVY9E9Sg7DGH9/exec" # ⬅️ 본인의 웹앱 URL을 입력하세요!
+GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyNn6k22qetT7ssMQpW_uxzPMG-ySVE3DHf-_65_Pvn9UEeJOi16w5JWyY_pE-dABZQ/exec" # ⬅️ 본인의 웹앱 URL을 입력하세요!
 
 # 상승/하락/추천 및 포트폴리오 감시 스타일 정의
 st.markdown("""
@@ -35,30 +35,20 @@ def get_current_market_time():
     current_hour = now.hour
     current_minute = now.minute
     is_market_open = is_weekday and (9 <= current_hour < 15 or (current_hour == 15 and current_minute <= 30))
-    
-    if is_market_open:
-        display_time = now.strftime("%H:%M:%S")
-    elif is_weekday and (current_hour > 15 or (current_hour == 15 and current_minute > 30)):
-        display_time = "15:30 (장마감)"
-    else:
-        display_time = "09:00 (장 시작 전)"
-    return display_time, is_market_open
+    if is_market_open: return now.strftime("%H:%M:%S"), True
+    elif is_weekday and (current_hour > 15 or (current_hour == 15 and current_minute > 30)): return "15:30 (장마감)", False
+    else: return "09:00 (장 시작 전)", False
 
-# 구글 스프레드시트에서 탭별로 읽어오는 함수 (gid 파라미터 추가)
+# 구글 스프레드시트에서 탭별로 읽어오는 함수
 def load_portfolio_from_sheets(url, sheet_name=None):
     try:
         if "/edit" in url:
             base_url = url.split("/edit")[0]
-            if sheet_name:
-                csv_url = f"{base_url}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
-            else:
-                csv_url = base_url + "/export?format=csv"
-        else:
-            csv_url = url
+            csv_url = f"{base_url}/gviz/tq?tqx=out:csv&sheet={sheet_name}" if sheet_name else base_url + "/export?format=csv"
+        else: csv_url = url
         df = pd.read_csv(csv_url)
         return df
-    except Exception as e:
-        return pd.DataFrame()
+    except Exception as e: return pd.DataFrame()
 
 # 네이버 증권 데이터 추출 함수
 @st.cache_data(ttl=10)
@@ -72,8 +62,8 @@ def fetch_market_data(sosok_code):
     stocks = []
     rows = table_v.find_all('tr')
     for row in rows:
-        anchor = row.find('a', {'class': 'tltle'})
-        if anchor: stocks.append({'종목명': anchor.get_text().strip(), '코드': anchor['href'].split('=')[-1]})
+      anchor = row.find('a', {'class': 'tltle'})
+      if anchor: stocks.append({'종목명': anchor.get_text().strip(), '코드': anchor['href'].split('=')[-1]})
             
     df_v = pd.read_html(io.StringIO(str(table_v)))[0].dropna(subset=['종목명'])
     df_v = df_v[df_v['종목명'] != '종목명'].head(10).copy()
@@ -91,8 +81,8 @@ def fetch_market_data(sosok_code):
     stocks_g = []
     rows_g = table_g.find_all('tr')
     for row in rows_g:
-        anchor = row.find('a', {'class': 'tltle'})
-        if anchor: stocks_g.append({'종목명': anchor.get_text().strip(), '코드': anchor['href'].split('=')[-1]})
+      anchor = row.find('a', {'class': 'tltle'})
+      if anchor: stocks_g.append({'종목명': anchor.get_text().strip(), '코드': anchor['href'].split('=')[-1]})
             
     df_g = pd.read_html(io.StringIO(str(table_g)))[0].dropna(subset=['종목명'])
     df_g = df_g[df_g['종목명'] != '종목명'].head(10).copy()
@@ -122,8 +112,7 @@ def get_all_stock_codes():
         try:
             res = requests.get(url, headers=headers, timeout=10)
             soup = BeautifulSoup(res.text, 'html.parser')
-            for anchor in soup.find_all('a', {'class': 'tltle'}):
-                mapping[anchor.get_text().strip()] = anchor['href'].split('=')[-1]
+            for anchor in soup.find_all('a', {'class': 'tltle'}): mapping[anchor.get_text().strip()] = anchor['href'].split('=')[-1]
         except: pass
     return mapping
 
@@ -166,7 +155,7 @@ sheet_df = load_portfolio_from_sheets(GOOGLE_SHEET_URL)
 sell_df = load_portfolio_from_sheets(GOOGLE_SHEET_URL, sheet_name="매도현황")
 code_master = get_all_stock_codes()
 
-# ----------------- [새 기능] 매수 / 매도 관리 입력 폼 -----------------
+# ----------------- 매수 / 매도 관리 입력 폼 -----------------
 st.markdown("---")
 tab_buy, tab_sell = st.tabs(["➕ 새 주식 매수 추가", "➖ 주식 매도 기록"])
 
@@ -194,30 +183,39 @@ with tab_buy:
 with tab_sell:
     with st.form("sell_stock_form", clear_on_submit=True):
         s_col1, s_col2, s_col3 = st.columns(3)
-        # 현재 보유중인 종목 리스트를 선택지로 제공
         active_stocks = sheet_df['종목명'].dropna().unique().tolist() if not sheet_df.empty else []
+        
+        # 현재 선택한 종목의 실제 보유주수를 실시간 파악하기 위한 가이드라인 로직
         with s_col1: sell_name = st.selectbox("매도할 종목 선택", active_stocks if active_stocks else ["보유 주식 없음"])
+        
+        max_sell_qty = 1000000
+        current_hold_qty = 0
+        if not sheet_df.empty and sell_name in sheet_df['종목명'].values:
+            matching_row = sheet_df[sheet_df['종목명'] == sell_name].iloc[0]
+            current_hold_qty = int(pd.to_numeric(matching_row['보유주수'], errors='coerce'))
+            max_sell_qty = current_hold_qty if current_hold_qty > 0 else 1000000
+            
         with s_col2: sell_price = st.number_input("매도가(원)", min_value=0, step=10, value=0)
-        with s_col3: sell_qty = st.number_input("매도 주수(주)", min_value=1, step=1, value=1)
-        sell_btn = st.form_submit_button("🚨 실현 손익(매도) 확정")
+        # [안전 바인딩 적용] 보유 주수 이상으로 입력하는 것을 프론트엔드에서 1차 차단
+        with s_col3: sell_qty = st.number_input(f"매도 주수 (최대 {current_hold_qty}주 보유 중)", min_value=1, max_value=max_sell_qty, step=1, value=min(1, max_sell_qty))
+        sell_btn = st.form_submit_button("🚨 실현 손익(매도) 확정 및 실시간 삭제")
         
         if sell_btn and sell_name != "보유 주식 없음":
             if sell_price <= 0: st.error("❌ 정확한 매도 가격을 입력해 주세요.")
             else:
-                # 매수가(평단가) 찾아서 수익 자동 계산
                 matching = sheet_df[sheet_df['종목명'] == sell_name]
                 if not matching.empty:
                     buy_price_avg = pd.to_numeric(matching.iloc[0]['매수가'], errors='coerce')
                     profit_calculated = int((sell_price - buy_price_avg) * sell_qty)
                     
-                    with st.spinner("매도 현황 탭에 기록 중..."):
+                    with st.spinner("구글 연동 처리 중 (매도기록 생성 및 보유고 청산)..."):
                         payload = {
                             "action": "sell", "stock_name": sell_name, "sell_price": int(sell_price),
                             "qty": int(sell_qty), "profit": profit_calculated, "date": datetime.now().strftime("%Y-%m-%d %H:%M")
                         }
                         try:
                             requests.post(GOOGLE_WEB_APP_URL, json=payload)
-                            st.success(f"🎉 {sell_name} {sell_qty}주 매도 완료! (수익: {profit_calculated:,}원)")
+                            st.success(f"🎉 {sell_name} {sell_qty}주 매도 청산 완료! 보유현황에서 즉시 반영됩니다.")
                             st.cache_data.clear()
                         except Exception as e: st.error(f"전송 실패: {e}")
 
@@ -240,21 +238,17 @@ if not sheet_df.empty and "종목명" in sheet_df.columns:
             code = code_master[name]
             current_price = get_current_price(code, m_type)
             my_stock_list.append(name)
-            
             if current_price:
                 profit_rate = round(((current_price - buy_price) / buy_price) * 100, 2)
                 total_profit = int((current_price - buy_price) * qty)
                 row_style = "class='portfolio-danger'" if profit_rate <= -2.0 else ("class='portfolio-success'" if profit_rate >= 4.0 else "")
                 signal = "🚨 [매도] -2% 이탈!" if profit_rate <= -2.0 else ("🎉 [익절] +4% 도달!" if profit_rate >= 4.0 else "➖ 보유 유지")
-                
                 rate_html = f"<span class='up-color'>+{profit_rate}%</span>" if profit_rate > 0 else (f"<span class='down-color'>{profit_rate}%</span>" if profit_rate < 0 else "<span>0.0%</span>")
                 profit_html = f"<span class='up-color'>{total_profit:,}원</span>" if total_profit > 0 else (f"<span class='down-color'>{total_profit:,}원</span>" if total_profit < 0 else "<span>0원</span>")
-                
                 p_html += f"<tr {row_style} style='border-bottom:1px solid #ddd; height:40px;'><td><b>{name}</b></td><td>{int(buy_price):,}원</td><td>{int(qty):,}주</td><td>{current_price:,}원</td><td>{profit_html}</td><td>{rate_html}</td><td><b>{signal}</b></td></tr>"
     p_html += "</table>"
     st.markdown(p_html, unsafe_allow_html=True)
-else:
-    st.info("💡 구글 스프레드시트 구조를 확인해 주세요.")
+else: st.info("💡 구글 스프레드시트 구조를 확인해 주세요.")
 
 # ----------------- 하단 시장 데이터 및 주도주 분석 -----------------
 st.markdown("---")
@@ -272,8 +266,7 @@ try:
             rate_num = parse_rate(row['등락률'])
             rate_html = f"<span class='up-color'>▲ +{rate_num}%</span>" if rate_num > 0 else (f"<span class='down-color'>▼ {rate_num}%</span>" if rate_num < 0 else "<span class='flat-color'>0.0%</span>")
             is_recommended = (table_type == "value" and float(row['거래대금(억)']) >= 500 and 3 <= rate_num <= 15) or (table_type == "volume" and int(row['raw_vol']) >= 1000000 and rate_num >= 7)
-            if is_recommended:
-                recommendations[row['종목명']] = f"💰 **[거래대금 주도주]** 수급 집중!" if table_type=="value" else f"🚀 **[거래량 폭발]** 저항대 돌파 중!"
+            if is_recommended: recommendations[row['종목명']] = f"💰 **[거래대금 주도주]** 수급 집중!" if table_type=="value" else f"🚀 **[거래량 폭발]** 저항대 돌파 중!"
             row_class = "class='recommend-row'" if is_recommended else ""
             html += f"<tr {row_class} style='border-bottom:1px solid #eee; height:35px;'><td>{idx+1}</td><td>{row['종목명']}</td><td>{rate_html}</td><td>{row['거래대금(억)' if table_type=='value' else '거래량(만)']}</td></tr>"
         return html + "</table>"
@@ -313,21 +306,15 @@ try:
         st.markdown(f"### 📊 {selected_stock_name} ({selected_code})")
         get_stock_chart(selected_code, selected_stock_name, period_choice, market_tab)
 
-    # ----------------- [새 기능] 하단 확정 매도 실현 손익 현황판 -----------------
+    # ----------------- 하단 확정 매도 실현 손익 현황판 -----------------
     st.markdown("---")
     st.subheader("💰 확정 실현 손익 (구글 문서 '매도현황' 탭 연동)")
     if not sell_df.empty and "수익금액" in sell_df.columns:
         sell_df['수익금액'] = pd.to_numeric(sell_df['수익금액'], errors='coerce').fillna(0)
         total_realized_profit = int(sell_df['수익금액'].sum())
-        
         sc1, sc2 = st.columns([1, 3])
-        with sc1:
-            st.metric(label="누적 실현 손익 합계", value=f"{total_realized_profit:,}원", 
-                      delta="우상향 중 🚀" if total_realized_profit > 0 else "주의 요망 📉",
-                      delta_color="normal" if total_realized_profit >= 0 else "inverse")
-        with sc2:
-            st.dataframe(sell_df[['종목명', '매도가', '보유주수', '수익금액', '매도일자']], use_container_width=True)
-    else:
-        st.info("💡 아직 매도 확정된 내역이 없습니다. 주식을 매도하면 여기에 누적 손익이 표시됩니다.")
+        with sc1: st.metric(label="누적 실현 손익 합계", value=f"{total_realized_profit:,}원", delta="우상향 중 🚀" if total_realized_profit > 0 else "주의 요망 📉", delta_color="normal" if total_realized_profit >= 0 else "inverse")
+        with sc2: st.dataframe(sell_df[['종목명', '매도가', '보유주수', '수익금액', '매도일자']], use_container_width=True)
+    else: st.info("💡 아직 매도 확정된 내역이 없습니다. 주식을 매도하면 여기에 누적 손익이 표시됩니다.")
 
 except Exception as e: st.error(f"데이터 연동 중 오류 발생: {e}")
