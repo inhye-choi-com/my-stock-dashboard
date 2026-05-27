@@ -14,7 +14,7 @@ st.set_page_config(page_title="실시간 주도주 & 포트폴리오 패널", la
 
 # [연동 완료] 제공해주신 구글 스프레드시트 공유 주소 및 쓰기용 웹앱 URL
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1pMpXBZh3sIDE79e7vNmUgdVEU8f-qbywYy7biuWoUNM/edit?usp=sharing"
-GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxiZrc6nBMQ2k70av70cTwwU8KTdRThIAl4qsabEXPzRZI4fvMVtAIyyL_nGkUSmCWP/exec" # ⬅️ 여기에 새 주소를 꼭 교체해 주세요!
+GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxiZrc6nBMQ2k70av70cTwwU8KTdRThIAl4qsabEXPzRZI4fvMVtAIyyL_nGkUSmCWP/exec" # ⬅️ 여기에 사장님의 새 주소를 넣어주세요!
 
 # 상승/하락/추천 및 포트폴리오 감시 스타일 정의
 st.markdown("""
@@ -44,6 +44,7 @@ def load_portfolio_from_sheets(url, sheet_name=None):
     try:
         if "/edit" in url:
             base_url = url.split("/edit")[0]
+            # 지정된 시트 이름(보유현황)을 가져오도록 URL 포맷 최적화
             csv_url = f"{base_url}/gviz/tq?tqx=out:csv&sheet={sheet_name}" if sheet_name else base_url + "/export?format=csv"
         else: csv_url = url
         df = pd.read_csv(csv_url)
@@ -150,9 +151,8 @@ st.title("🔥 실시간 단타 매매 & 스마트 포트폴리오")
 today_str = datetime.now().strftime('%Y-%m-%d')
 st.caption(f"📅 기준일: {today_str} | 🔄 60초 간격 실시간 갱신 중")
 
-# 데이터 미리 로드
-sheet_df = load_portfolio_from_sheets(GOOGLE_SHEET_URL)
-sell_df = load_portfolio_from_sheets(GOOGLE_SHEET_URL, sheet_name="매도현황")
+# 🎯 중요: '보유현황' 시트 이름을 명시해서 실시간 로드하도록 고정
+sheet_df = load_portfolio_from_sheets(GOOGLE_SHEET_URL, sheet_name="보유현황")
 code_master = get_all_stock_codes()
 
 # ----------------- 매수 / 매도 관리 입력 폼 -----------------
@@ -211,8 +211,8 @@ with tab_sell:
                             "stock_name": sell_name, 
                             "buy_price": int(buy_price_avg),
                             "sell_price": int(sell_price), 
-                            "qty": int(sell_qty),          # 정수(int) 포맷 고정
-                            "profit": int(profit_calculated), # 정수(int) 포맷 고정
+                            "qty": int(sell_qty), 
+                            "profit": int(profit_calculated), 
                             "date": datetime.now().strftime("%Y-%m-%d %H:%M")
                         }
                         try:
@@ -249,7 +249,7 @@ if not sheet_df.empty and "종목명" in sheet_df.columns:
                 p_html += f"<tr {row_style} style='border-bottom:1px solid #ddd; height:40px;'><td><b>{name}</b></td><td>{int(buy_price):,}원</td><td>{int(qty):,}주</td><td>{current_price:,}원</td><td>{profit_html}</td><td>{rate_html}</td><td><b>{signal}</b></td></tr>"
     p_html += "</table>"
     st.markdown(p_html, unsafe_allow_html=True)
-else: st.info("💡 구글 스프레드시트 구조를 확인해 주세요.")
+else: st.info("💡 구글 스프레드시트의 '보유현황' 탭 데이터를 확인해 주세요.")
 
 # ----------------- 하단 시장 데이터 및 주도주 분석 -----------------
 st.markdown("---")
@@ -306,19 +306,5 @@ try:
         selected_code = code_master.get(selected_stock_name, "005930")
         st.markdown(f"### 📊 {selected_stock_name} ({selected_code})")
         get_stock_chart(selected_code, selected_stock_name, period_choice, market_tab)
-
-    # ----------------- 하단 확정 매도 실현 손익 현황판 -----------------
-    st.markdown("---")
-    st.subheader("💰 확정 실현 손익 (구글 문서 '매도현황' 탭 연동)")
-    if not sell_df.empty and "수익금액" in sell_df.columns:
-        sell_df['수익금액'] = pd.to_numeric(sell_df['수익금액'], errors='coerce').fillna(0)
-        total_realized_profit = int(sell_df['수익금액'].sum())
-        sc1, sc2 = st.columns([1, 3])
-        with sc1: st.metric(label="누적 실현 손익 합계", value=f"{total_realized_profit:,}원", delta="우상향 중 🚀" if total_realized_profit > 0 else "주의 요망 📉", delta_color="normal" if total_realized_profit >= 0 else "inverse")
-        with sc2:
-            available_cols = ['종목명', '매수가', '매도가', '보유주수', '수익금액', '매도일자']
-            display_cols = [c for c in available_cols if c in sell_df.columns]
-            st.dataframe(sell_df[display_cols], use_container_width=True)
-    else: st.info("💡 아직 매도 확정된 내역이 없습니다. 주식을 매도하면 여기에 누적 손익이 표시됩니다.")
 
 except Exception as e: st.error(f"데이터 연동 중 오류 발생: {e}")
