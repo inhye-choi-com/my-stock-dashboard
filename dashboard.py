@@ -14,7 +14,7 @@ st.set_page_config(page_title="실시간 주도주 & 포트폴리오 패널", la
 
 # [연동 완료] 제공해주신 구글 스프레드시트 공유 주소 및 쓰기용 웹앱 URL
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1pMpXBZh3sIDE79e7vNmUgdVEU8f-qbywYy7biuWoUNM/edit?usp=sharing"
-GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycby2tJvTyguwuaqIpQENeLT4JskJ552NqY013KxRziIJ9wnArq3Ou0S1R-dy46aZewnB/exec" # ⬅️ 여기에 새 주소를 꼭 교체해 주세요!
+GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxiZrc6nBMQ2k70av70cTwwU8KTdRThIAl4qsabEXPzRZI4fvMVtAIyyL_nGkUSmCWP/exec" # ⬅️ 여기에 새 주소를 꼭 교체해 주세요!
 
 # 상승/하락/추천 및 포트폴리오 감시 스타일 정의
 st.markdown("""
