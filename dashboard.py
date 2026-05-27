@@ -14,7 +14,7 @@ st.set_page_config(page_title="실시간 주도주 & 포트폴리오 패널", la
 
 # [연동 완료] 제공해주신 구글 스프레드시트 공유 주소 및 쓰기용 웹앱 URL
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1pMpXBZh3sIDE79e7vNmUgdVEU8f-qbywYy7biuWoUNM/edit?usp=sharing"
-GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzcZbGOl8IW8aGbtwz9VcVnRgSa_oT2VcPjXpEu2NkijY4iUABsxYjLC7ZXEmwXPYGq/exec" # ⬅️ 본인의 웹앱 URL을 입력하세요!
+GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxqFYjWu1d8vVjL8rqEAZmfE-gkrMFMX4bZh3x4HaNsF7UHGSpiF-cFjMJ3WxdzqGdk/exec" # ⬅️ 여기에 새 주소를 꼭 교체해 주세요!
 
 # 상승/하락/추천 및 포트폴리오 감시 스타일 정의
 st.markdown("""
@@ -203,13 +203,16 @@ with tab_sell:
                 matching = sheet_df[sheet_df['종목명'] == sell_name]
                 if not matching.empty:
                     buy_price_avg = int(pd.to_numeric(matching.iloc[0]['매수가'], errors='coerce'))
-                    profit_calculated = int((sell_price - buy_price_avg) * sell_qty)
+                    profit_calculated = int((sell_price - buy_price_avg) * int(sell_qty))
                     
                     with st.spinner("구글 연동 처리 중..."):
-                        # [수정] payload에 buy_price(매수가) 정보 추가 전송
                         payload = {
-                            "action": "sell", "stock_name": sell_name, "buy_price": buy_price_avg,
-                            "sell_price": int(sell_price), "qty": int(sell_qty), "profit": profit_calculated, 
+                            "action": "sell", 
+                            "stock_name": sell_name, 
+                            "buy_price": int(buy_price_avg),
+                            "sell_price": int(sell_price), 
+                            "qty": int(sell_qty),          # 정수(int) 포맷 고정
+                            "profit": int(profit_calculated), # 정수(int) 포맷 고정
                             "date": datetime.now().strftime("%Y-%m-%d %H:%M")
                         }
                         try:
@@ -313,7 +316,6 @@ try:
         sc1, sc2 = st.columns([1, 3])
         with sc1: st.metric(label="누적 실현 손익 합계", value=f"{total_realized_profit:,}원", delta="우상향 중 🚀" if total_realized_profit > 0 else "주의 요망 📉", delta_color="normal" if total_realized_profit >= 0 else "inverse")
         with sc2:
-            # [수정] 대시보드 테이블에 노출되는 컬럼 순서를 사용자가 요청한 대로 완전 정렬
             available_cols = ['종목명', '매수가', '매도가', '보유주수', '수익금액', '매도일자']
             display_cols = [c for c in available_cols if c in sell_df.columns]
             st.dataframe(sell_df[display_cols], use_container_width=True)
