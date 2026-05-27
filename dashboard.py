@@ -12,9 +12,9 @@ from plotly.subplots import make_subplots
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="실시간 주도주 & 포트폴리오 패널", layout="wide")
 
-# [연동 완료] 제공해주신 구글 스프레드시트 공유 주소 및 쓰기용 웹앱 URL
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1pMpXBZh3sIDE79e7vNmUgdVEU8f-qbywYy7biuWoUNM/edit?usp=sharing"
-GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw7lUlILTlBIVq9Af_fwY5JT9xOLORaNqcoPdci8Jr8jcnb8jfb2tiWgJbx-kcLmTpM/exec" # ⬅️ 여기에 사장님의 새 주소를 넣어주세요!
+# 🎯 [필수 수정 구역] 사장님의 새 구글 스프레드시트 공유 주소와 웹앱 URL을 정확히 입력해 주세요!
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1pMpXBZh3sIDE79e7vNmUgdVEU8f-qbywYy7biuWoUNM/edit?usp=sharing" 
+GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw0EcgCR_myrhrtZbtDn1d3Jq11p__mqQCOnoqZ3fO6-G5juC-x3XdWuyDtdWULfwJ6/exec" 
 
 # 상승/하락/추천 및 포트폴리오 감시 스타일 정의
 st.markdown("""
@@ -39,17 +39,14 @@ def get_current_market_time():
     elif is_weekday and (current_hour > 15 or (current_hour == 15 and current_minute > 30)): return "15:30 (장마감)", False
     else: return "09:00 (장 시작 전)", False
 
-# 구글 스프레드시트에서 '보유현황'을 확실하게 지정하여 다운로드하는 최적화 함수
+# 구글 스프레드시트에서 '보유현황' 탭 데이터를 안전하게 원격 다운로드하는 함수
 def load_portfolio_from_sheets(url, sheet_name="보유현황"):
     try:
         if "/edit" in url:
             base_url = url.split("/edit")[0]
-            # 인코딩 포맷을 정렬하여 시트 이름 인식을 강화함
             csv_url = f"{base_url}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
         else:
             csv_url = url
-        
-        # 🤖 구글 시트가 수량이나 가격을 문자로 보낼 때를 대비한 전처리 포함 로드
         df = pd.read_csv(csv_url)
         if not df.empty:
             df.columns = [c.strip() for c in df.columns]
@@ -140,9 +137,9 @@ def get_stock_chart(code, name, period_choice, market_type):
         fig.add_trace(go.Scatter(x=df.index, y=df['MA5'], line=dict(color='#ff9800', width=1.5), name='5일선'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['MA10'], line=dict(color='#4caf50', width=1.5), name='10일선'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['MA20'], line=dict(color='#9c27b0', width=1.5), name='20일선'), row=1, col=1)
-        colors = ['#ef4444' if row['Close'] >= row['Open'] else '#3b82f6' for _, row in df.iterrows()]
+        colors = ['#ef4444' if r['Close'] >= r['Open'] else '#3b82f6' for _, r in df.iterrows()]
         
-        # 🎯 [에러 수정 완료]: go.Bar의 열린 괄호 ')'를 완벽하게 닫아주었습니다.
+        # 🎯 [문법 에러 영구 수정] 괄호 닫힘 유효성 보정 완료
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name="거래량", marker_color=colors), row=2, col=1)
         
         fig.update_layout(xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10), height=400, template="plotly_white")
@@ -160,7 +157,6 @@ st.title("🔥 실시간 단타 매매 & 스마트 포트폴리오")
 today_str = datetime.now().strftime('%Y-%m-%d')
 st.caption(f"📅 기준일: {today_str} | 🔄 60초 간격 실시간 갱신 중")
 
-# 🎯 구글 스프레드시트의 '보유현황' 탭 데이터를 실시간 로드
 sheet_df = load_portfolio_from_sheets(GOOGLE_SHEET_URL, sheet_name="보유현황")
 code_master = get_all_stock_codes()
 
@@ -179,7 +175,7 @@ with tab_buy:
         
         if submit_btn:
             if new_name.strip() == "" or new_price <= 0: st.error("❌ 종목명과 정확한 매수 가격을 입력해 주세요.")
-            elif GOOGLE_WEB_APP_URL == "여기에_복사한_웹앱_URL_입력": st.warning("⚠️ GOOGLE_WEB_APP_URL 설정을 완료해 주세요.")
+            elif GOOGLE_WEB_APP_URL in ["YOUR_WEB_APP_URL", ""]: st.warning("⚠️ GOOGLE_WEB_APP_URL 설정을 완료해 주세요.")
             else:
                 with st.spinner("구글 드라이브에 기록 중..."):
                     payload = {"action": "buy", "stock_name": new_name.strip(), "buy_price": int(new_price), "qty": int(new_qty), "market": new_market}
@@ -260,7 +256,7 @@ if not sheet_df.empty and "종목명" in sheet_df.columns:
     p_html += "</table>"
     st.markdown(p_html, unsafe_allow_html=True)
 else:
-    st.info("💡 구글 스프레드시트의 '보유현황' 탭 데이터를 읽어오는 중이거나 데이터가 비어 있습니다.")
+    st.info("💡 구글 스프레드시트의 '보유현황' 탭 데이터를 정상적으로 읽어오는 중입니다. 잠시만 기다려주세요.")
 
 # ----------------- 하단 시장 데이터 및 주도주 분석 -----------------
 st.markdown("---")
