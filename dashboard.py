@@ -12,9 +12,9 @@ from plotly.subplots import make_subplots
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="실시간 주도주 & 포트폴리오 패널", layout="wide")
 
-# 🎯 [필수 수정 구역] 사장님의 새 구글 스프레드시트 공유 주소와 웹앱 URL을 정확히 입력해 주세요!
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1pMpXBZh3sIDE79e7vNmUgdVEU8f-qbywYy7biuWoUNM/edit?usp=sharing" 
-GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw0EcgCR_myrhrtZbtDn1d3Jq11p__mqQCOnoqZ3fO6-G5juC-x3XdWuyDtdWULfwJ6/exec" 
+# 🔥 [연동 완벽 고정] 제공해주신 구글 시트 주소 및 앱스 스크립트 웹앱 주소 세팅 완료
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1pMpXBZh3sIDE79e7vNmUgdVEU8f-qbywYy7biuWoUNM/edit?usp=sharing"
+GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw0EcgCR_myrhrtZbtDn1d3Jq11p__mqQCOnoqZ3fO6-G5juC-x3XdWuyDtdWULfwJ6/exec"
 
 # 상승/하락/추천 및 포트폴리오 감시 스타일 정의
 st.markdown("""
@@ -39,7 +39,7 @@ def get_current_market_time():
     elif is_weekday and (current_hour > 15 or (current_hour == 15 and current_minute > 30)): return "15:30 (장마감)", False
     else: return "09:00 (장 시작 전)", False
 
-# 구글 스프레드시트에서 '보유현황' 탭 데이터를 안전하게 원격 다운로드하는 함수
+# 구글 스프레드시트 로드 함수 (네트워크 캐시 방지 적용)
 def load_portfolio_from_sheets(url, sheet_name="보유현황"):
     try:
         if "/edit" in url:
@@ -47,11 +47,17 @@ def load_portfolio_from_sheets(url, sheet_name="보유현황"):
             csv_url = f"{base_url}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
         else:
             csv_url = url
-        df = pd.read_csv(csv_url)
-        if not df.empty:
-            df.columns = [c.strip() for c in df.columns]
-        return df
-    except Exception as e:
+        
+        # 캐시 방지 타임스탬프 결합 요청
+        response = requests.get(f"{csv_url}&t={int(datetime.now().timestamp())}", timeout=10)
+        if response.status_code == 200:
+            df = pd.read_csv(io.StringIO(response.text))
+            if not df.empty:
+                df.columns = [c.strip() for c in df.columns]
+                df = df.dropna(subset=['종목명'])
+            return df
+        return pd.DataFrame()
+    except:
         return pd.DataFrame()
 
 # 네이버 증권 데이터 추출 함수
@@ -138,10 +144,7 @@ def get_stock_chart(code, name, period_choice, market_type):
         fig.add_trace(go.Scatter(x=df.index, y=df['MA10'], line=dict(color='#4caf50', width=1.5), name='10일선'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['MA20'], line=dict(color='#9c27b0', width=1.5), name='20일선'), row=1, col=1)
         colors = ['#ef4444' if r['Close'] >= r['Open'] else '#3b82f6' for _, r in df.iterrows()]
-        
-        # 🎯 [문법 에러 영구 수정] 괄호 닫힘 유효성 보정 완료
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name="거래량", marker_color=colors), row=2, col=1)
-        
         fig.update_layout(xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10), height=400, template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
 
@@ -175,14 +178,14 @@ with tab_buy:
         
         if submit_btn:
             if new_name.strip() == "" or new_price <= 0: st.error("❌ 종목명과 정확한 매수 가격을 입력해 주세요.")
-            elif GOOGLE_WEB_APP_URL in ["YOUR_WEB_APP_URL", ""]: st.warning("⚠️ GOOGLE_WEB_APP_URL 설정을 완료해 주세요.")
             else:
                 with st.spinner("구글 드라이브에 기록 중..."):
                     payload = {"action": "buy", "stock_name": new_name.strip(), "buy_price": int(new_price), "qty": int(new_qty), "market": new_market}
                     try:
-                        requests.post(GOOGLE_WEB_APP_URL, json=payload)
+                        res = requests.post(GOOGLE_WEB_APP_URL, json=payload, timeout=10)
                         st.success(f"🎉 {new_name} 매수 기록 완료!")
                         st.cache_data.clear()
+                        st.rerun()
                     except Exception as e: st.error(f"전송 실패: {e}")
 
 with tab_sell:
@@ -221,9 +224,10 @@ with tab_sell:
                             "date": datetime.now().strftime("%Y-%m-%d %H:%M")
                         }
                         try:
-                            requests.post(GOOGLE_WEB_APP_URL, json=payload)
+                            requests.post(GOOGLE_WEB_APP_URL, json=payload, timeout=10)
                             st.success(f"🎉 {sell_name} {sell_qty}주 매도 청산 완료!")
                             st.cache_data.clear()
+                            st.rerun()
                         except Exception as e: st.error(f"전송 실패: {e}")
 
 # ----------------- 상단 실시간 보유 주식 종합 현황 -----------------
@@ -234,7 +238,7 @@ if not sheet_df.empty and "종목명" in sheet_df.columns:
     p_html = "<table style='width:100%; border-collapse:collapse; text-align:left;'>"
     p_html += "<tr style='border-bottom:2px solid #333; background-color:#f3f4f6; height:35px;'><th>종목명</th><th>매수가</th><th>보유주수</th><th>현재가</th><th>평가수익</th><th>수익률</th><th>매매 신호</th></tr>"
     for _, row in sheet_df.iterrows():
-        if pd.isna(row['종목명']): continue
+        if pd.isna(row['종목명']) or str(row['종목명']).strip() == "": continue
         name = str(row['종목명']).strip()
         buy_price = pd.to_numeric(row['매수가'], errors='coerce')
         qty = pd.to_numeric(row['보유주수'], errors='coerce') if '보유주수' in sheet_df.columns else 1
@@ -256,7 +260,7 @@ if not sheet_df.empty and "종목명" in sheet_df.columns:
     p_html += "</table>"
     st.markdown(p_html, unsafe_allow_html=True)
 else:
-    st.info("💡 구글 스프레드시트의 '보유현황' 탭 데이터를 정상적으로 읽어오는 중입니다. 잠시만 기다려주세요.")
+    st.info("💡 구글 스프레드시트의 '보유현황' 탭 데이터를 정상적으로 읽어오는 중입니다. 상단의 구글 시트 공유 설정을 변경 후 잠시만 기다려주세요.")
 
 # ----------------- 하단 시장 데이터 및 주도주 분석 -----------------
 st.markdown("---")
